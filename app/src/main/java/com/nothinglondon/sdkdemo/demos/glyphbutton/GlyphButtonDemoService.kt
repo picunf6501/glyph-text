@@ -12,10 +12,24 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class GlyphButtonDemoService : GlyphMatrixService("CUPSIZE") {
+class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    companion object {
+        private const val FULL_BRIGHTNESS = 2047
+        private const val DIM_BRIGHTNESS = 100
+        private const val DIM_DELAY_MS = 10_000L
+    }
+
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate
+    )
+
     private var animationJob: Job? = null
+    private var dimJob: Job? = null
+
+    private var isDimmed = false
+    private var isPressed = false
+    private var isConnected = false
 
     private var staticText = "GLY"
     private var scrollText = "GLYPH TEXT"
@@ -64,7 +78,6 @@ class GlyphButtonDemoService : GlyphMatrixService("CUPSIZE") {
         '.' to arrayOf("00000","00000","00000","00000","00000","00100","00100"),
         '-' to arrayOf("00000","00000","00000","11111","00000","00000","00000"),
         '?' to arrayOf("01110","10001","00001","00010","00100","00000","00100"),
-
         '<' to arrayOf("00001","00010","00100","01000","00100","00010","00001"),
         '>' to arrayOf("10000","01000","00100","00010","00100","01000","10000")
     )
@@ -86,34 +99,113 @@ class GlyphButtonDemoService : GlyphMatrixService("CUPSIZE") {
             preferences.getString("scroll_text", "GLYPH TEXT") ?: "GLYPH TEXT"
         ).uppercase()
 
+        isConnected = true
+        isPressed = false
+        isDimmed = false
+
+        animationJob?.cancel()
+        animationJob = null
+
+        dimJob?.cancel()
+        dimJob = null
+
         showStaticText()
+        restartDimTimer()
+    }
+
+    override fun onTouchPointPressed() {
+        if (!isConnected) return
+
+        isPressed = true
+        dimJob?.cancel()
+
+        // Wake up the static text immediately.
+        isDimmed = false
+
+        if (animationJob?.isActive != true) {
+            showStaticText()
+        }
+    }
+
+    override fun onTouchPointReleased() {
+        if (!isConnected) return
+
+        isPressed = false
+        restartDimTimer()
     }
 
     override fun onTouchPointLongPress() {
+        if (!isConnected) return
+
+        dimJob?.cancel()
         animationJob?.cancel()
+
+        isDimmed = false
 
         animationJob = scope.launch {
             val text = scrollText
             val textWidth = text.length * 6 - 1
 
             for (offset in 0..(textWidth + 25)) {
-                drawText(text, 25 - offset)
+                drawText(
+                    text,
+                    25 - offset,
+                    FULL_BRIGHTNESS
+                )
                 delay(70)
             }
 
+            animationJob = null
             showStaticText()
+            restartDimTimer()
+        }
+    }
+
+    private fun restartDimTimer() {
+        dimJob?.cancel()
+        dimJob = null
+
+        if (!isConnected) return
+        if (isPressed) return
+        if (animationJob?.isActive == true) return
+
+        dimJob = scope.launch {
+            delay(DIM_DELAY_MS)
+
+            if (
+                isConnected &&
+                !isPressed &&
+                animationJob?.isActive != true
+            ) {
+                isDimmed = true
+                showStaticText()
+            }
         }
     }
 
     private fun showStaticText() {
+        if (!isConnected) return
+
         val text = staticText
         val textWidth = text.length * 6 - 1
         val startX = (25 - textWidth) / 2
 
-        drawText(text, startX)
+        val brightness = if (isDimmed) {
+            DIM_BRIGHTNESS
+        } else {
+            FULL_BRIGHTNESS
+        }
+
+        drawText(text, startX, brightness)
     }
 
-    private fun drawText(text: String, startX: Int) {
+    private fun drawText(
+        text: String,
+        startX: Int,
+        brightness: Int
+    ) {
+        if (!isConnected) return
+
         val frame = IntArray(25 * 25)
 
         text.forEachIndexed { index, letter ->
@@ -124,8 +216,12 @@ class GlyphButtonDemoService : GlyphMatrixService("CUPSIZE") {
                     val px = startX + index * 6 + x
                     val py = 9 + y
 
-                    if (pixel == '1' && px in 0..24 && py in 0..24) {
-                        frame[py * 25 + px] = 2047
+                    if (
+                        pixel == '1' &&
+                        px in 0..24 &&
+                        py in 0..24
+                    ) {
+                        frame[py * 25 + px] = brightness
                     }
                 }
             }
@@ -134,8 +230,22 @@ class GlyphButtonDemoService : GlyphMatrixService("CUPSIZE") {
         glyphMatrixManager?.setMatrixFrame(frame)
     }
 
-    override fun onDestroy() {
+    override fun performOnServiceDisconnected(context: Context) {
+        isConnected = false
+
+        dimJob?.cancel()
+        dimJob = null
+
         animationJob?.cancel()
+        animationJob = null
+    }
+
+    override fun onDestroy() {
+        isConnected = false
+
+        dimJob?.cancel()
+        animationJob?.cancel()
+
         scope.cancel()
         super.onDestroy()
     }
