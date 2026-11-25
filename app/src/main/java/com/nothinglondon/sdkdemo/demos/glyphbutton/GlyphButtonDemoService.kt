@@ -1,6 +1,11 @@
+
 package com.nothinglondon.sdkdemo.demos.glyphbutton
 
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import com.nothing.ketchum.GlyphMatrixManager
 import com.nothinglondon.sdkdemo.demos.GlyphMatrixService
 import kotlinx.coroutines.CoroutineScope
@@ -11,13 +16,19 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.ln
+import kotlin.math.roundToInt
 
-class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
+class GlyphButtonDemoService : GlyphMatrixService("GlyphText"), SensorEventListener {
 
     companion object {
         private const val FULL_BRIGHTNESS = 2047
-        private const val DIM_BRIGHTNESS = 100
         private const val DIM_DELAY_MS = 10_000L
+
+        private const val MIN_ADAPTIVE_BRIGHTNESS = 350
+        private const val MAX_ADAPTIVE_BRIGHTNESS = 1600
+        private const val FALLBACK_ADAPTIVE_BRIGHTNESS = 700
+        private const val MIN_UPDATE_DIFFERENCE = 40
 
         private const val FONT_CLASSIC = "CLASSIC"
         private const val FONT_BOLD = "BOLD"
@@ -36,11 +47,17 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
     private var isPressed = false
     private var isConnected = false
 
+    private var sensorManager: SensorManager? = null
+    private var lightSensor: Sensor? = null
+    private var lightListenerRegistered = false
+    private var hasLuxReading = false
+    private var adaptiveBrightness = FALLBACK_ADAPTIVE_BRIGHTNESS
+    private var lastRenderedBrightness = FULL_BRIGHTNESS
+
     private var staticText = "GLY"
     private var scrollText = "GLYPH TEXT"
     private var fontStyle = FONT_CLASSIC
 
-    // Кэш избавляет анимацию от повторного построения букв на каждом кадре.
     private val glyphCache = mutableMapOf<Pair<String, Char>, Array<String>>()
 
     private val baseFont = mapOf(
@@ -137,6 +154,12 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         if (staticText.isBlank()) staticText = " "
         if (scrollText.isBlank()) scrollText = " "
 
+        stopLightSensor()
+        sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
+        adaptiveBrightness = FALLBACK_ADAPTIVE_BRIGHTNESS
+        hasLuxReading = false
+
         isConnected = true
         isPressed = false
         isDimmed = false
@@ -156,6 +179,7 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
 
         isPressed = true
         dimJob?.cancel()
+        stopLightSensor()
         isDimmed = false
 
         if (animationJob?.isActive != true) {
@@ -174,6 +198,7 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         if (!isConnected) return
 
         dimJob?.cancel()
+        stopLightSensor()
         animationJob?.cancel()
         isDimmed = false
 
@@ -212,10 +237,78 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
                 !isPressed &&
                 animationJob?.isActive != true
             ) {
-                isDimmed = true
-                showStaticText()
+                enterAdaptiveMode()
             }
         }
+    }
+
+    private fun enterAdaptiveMode() {
+        if (!isConnected || isPressed || animationJob?.isActive == true) return
+
+        isDimmed = true
+        hasLuxReading = false
+        adaptiveBrightness = FALLBACK_ADAPTIVE_BRIGHTNESS
+        showStaticText()
+
+        val sensor = lightSensor ?: return
+        lightListenerRegistered = sensorManager?.registerListener(
+            this,
+            sensor,
+            SensorManager.SENSOR_DELAY_NORMAL
+        ) == true
+    }
+
+    private fun stopLightSensor() {
+        if (lightListenerRegistered) {
+            sensorManager?.unregisterListener(this)
+            lightListenerRegistered = false
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (!isConnected || !isDimmed || isPressed) return
+        if (animationJob?.isActive == true) return
+        if (event.sensor.type != Sensor.TYPE_LIGHT) return
+
+        val lux = event.values.firstOrNull() ?: return
+        if (!lux.isFinite() || lux < 0f) return
+
+        val target = brightnessFromLux(lux)
+        adaptiveBrightness = if (!hasLuxReading) {
+            target
+        } else {
+            (
+                adaptiveBrightness * 0.75 +
+                target * 0.25
+            ).roundToInt()
+        }
+
+        val firstReading = !hasLuxReading
+        hasLuxReading = true
+
+        if (
+            firstReading ||
+            abs(adaptiveBrightness - lastRenderedBrightness) >= MIN_UPDATE_DIFFERENCE
+        ) {
+            showStaticText()
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    private fun brightnessFromLux(lux: Float): Int {
+        val safeLux = lux.coerceIn(0f, 5000f).toDouble()
+        val ratio = ln(1.0 + safeLux) / ln(5001.0)
+
+        return (
+            MIN_ADAPTIVE_BRIGHTNESS +
+            ratio * (MAX_ADAPTIVE_BRIGHTNESS - MIN_ADAPTIVE_BRIGHTNESS)
+        )
+            .roundToInt()
+            .coerceIn(
+                MIN_ADAPTIVE_BRIGHTNESS,
+                MAX_ADAPTIVE_BRIGHTNESS
+            )
     }
 
     private fun showStaticText() {
@@ -225,18 +318,29 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         val textWidth = getTextWidth(text)
         val startX = (25 - textWidth) / 2
 
-        val brightness = if (isDimmed) DIM_BRIGHTNESS else FULL_BRIGHTNESS
+        val brightness = if (isDimmed) {
+            adaptiveBrightness
+        } else {
+            FULL_BRIGHTNESS
+        }
+
+        lastRenderedBrightness = brightness
         drawText(text, startX, brightness)
     }
 
     private fun getTextWidth(text: String): Int {
         if (text.isEmpty()) return 0
 
-        val totalWidth = text.sumOf { getRenderedGlyph(it)[0].length }
+        val totalWidth = text.sumOf {
+            getRenderedGlyph(it)[0].length
+        }
+
         return totalWidth + (text.length - 1) * getLetterSpacing()
     }
 
-    private fun getLetterSpacing(): Int = if (fontStyle == FONT_GRAFFITI) 2 else 1
+    private fun getLetterSpacing(): Int {
+        return if (fontStyle == FONT_GRAFFITI) 2 else 1
+    }
 
     private fun getRenderedGlyph(char: Char): Array<String> {
         val key = fontStyle to char
@@ -256,7 +360,9 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
     private fun embolden(rows: Array<String>): Array<String> {
         val height = rows.size
         val width = rows[0].length
-        val result = Array(height) { CharArray(width + 1) { '0' } }
+        val result = Array(height) {
+            CharArray(width + 1) { '0' }
+        }
 
         for (y in 0 until height) {
             for (x in 0 until width) {
@@ -280,27 +386,35 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
             buildString {
                 for (x in 0 until targetWidth) {
                     val startX = x * sourceWidth / targetWidth
-                    val endX = ((x + 1) * sourceWidth / targetWidth).coerceAtMost(sourceWidth)
+                    val endX = ((x + 1) * sourceWidth / targetWidth)
+                        .coerceAtMost(sourceWidth)
+
                     val startY = y * sourceHeight / targetHeight
-                    val endY = ((y + 1) * sourceHeight / targetHeight).coerceAtMost(sourceHeight)
+                    val endY = ((y + 1) * sourceHeight / targetHeight)
+                        .coerceAtMost(sourceHeight)
 
                     var total = 0
                     var on = 0
+
                     for (sy in startY until endY) {
                         for (sx in startX until endX) {
                             total++
                             if (rows[sy][sx] == '1') on++
                         }
                     }
-                    append(if (on * 2 >= total && total > 0) '1' else '0')
+
+                    append(
+                        if (on * 2 >= total && total > 0) '1' else '0'
+                    )
                 }
             }
         }
     }
 
-    // Graffiti: 7x11, фиксированные неровные края и небольшие сколы.
-    // Никакого случайного мерцания: один и тот же символ всегда выглядит одинаково.
-    private fun makeGraffiti(char: Char, rows: Array<String>): Array<String> {
+    private fun makeGraffiti(
+        char: Char,
+        rows: Array<String>
+    ): Array<String> {
         val width = 7
         val height = 11
         val sourceWidth = rows[0].length
@@ -312,45 +426,74 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
             }
         }
 
-        val result = Array(height) { y -> original[y].copyOf() }
+        val result = Array(height) { y ->
+            original[y].copyOf()
+        }
 
-        // Символы пунктуации сохраняем без прорезей для читаемости.
         val isHeavyGlyph = char in 'A'..'Z' || char in '0'..'9'
+
         if (isHeavyGlyph) {
             val chips = mutableListOf<Triple<Int, Int, Int>>()
             val extraPixels = mutableListOf<Triple<Int, Int, Int>>()
 
             for (y in 1 until height - 1) {
                 for (x in 0 until width) {
-                    val left = if (x > 0 && original[y][x - 1] == '1') 1 else 0
-                    val right = if (x < width - 1 && original[y][x + 1] == '1') 1 else 0
-                    val up = if (original[y - 1][x] == '1') 1 else 0
-                    val down = if (original[y + 1][x] == '1') 1 else 0
+                    val left = if (
+                        x > 0 && original[y][x - 1] == '1'
+                    ) 1 else 0
+
+                    val right = if (
+                        x < width - 1 && original[y][x + 1] == '1'
+                    ) 1 else 0
+
+                    val up = if (
+                        original[y - 1][x] == '1'
+                    ) 1 else 0
+
+                    val down = if (
+                        original[y + 1][x] == '1'
+                    ) 1 else 0
+
                     val neighbors = left + right + up + down
 
                     val score = (
-                        char.code * 31 + x * 47 + y * 71 +
+                        char.code * 31 +
+                        x * 47 +
+                        y * 71 +
                         (x + 3) * (y + 5) * 11
                     ) % 97
 
-                    if (original[y][x] == '1' && neighbors in 2..3) {
+                    if (
+                        original[y][x] == '1' &&
+                        neighbors in 2..3
+                    ) {
                         chips.add(Triple(score, x, y))
-                    } else if (original[y][x] == '0' && neighbors >= 2) {
+                    } else if (
+                        original[y][x] == '0' &&
+                        neighbors >= 2
+                    ) {
                         extraPixels.add(Triple(score, x, y))
                     }
                 }
             }
 
             val chosen = mutableListOf<Pair<Int, Int>>()
+
             for ((_, x, y) in chips.sortedBy { it.first }) {
-                if (chosen.all { (cx, cy) -> abs(cx - x) + abs(cy - y) > 3 }) {
+                if (
+                    chosen.all { (cx, cy) ->
+                        abs(cx - x) + abs(cy - y) > 3
+                    }
+                ) {
                     result[y][x] = '0'
                     chosen.add(x to y)
                 }
+
                 if (chosen.size == 3) break
             }
 
             val extra = extraPixels.minByOrNull { it.first }
+
             if (extra != null) {
                 result[extra.third][extra.second] = '1'
             }
@@ -400,7 +543,11 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
     }
 
     override fun performOnServiceDisconnected(context: Context) {
+        stopLightSensor()
+
         isConnected = false
+        sensorManager = null
+        lightSensor = null
 
         dimJob?.cancel()
         dimJob = null
@@ -410,6 +557,7 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
     }
 
     override fun onDestroy() {
+        stopLightSensor()
         isConnected = false
 
         dimJob?.cancel()
