@@ -18,6 +18,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.nothinglondon.sdkdemo.ui.theme.NothingAndroidSDKDemoTheme
 
 enum class FontOption(val key: String, val label: String) {
@@ -68,6 +71,19 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Новые настройки имеют значения по умолчанию для старых установок.
+                var autoBrightness by remember {
+                    mutableStateOf(preferences.getBoolean("auto_brightness", true))
+                }
+                var manualBrightnessLevel by remember {
+                    mutableStateOf(
+                        preferences.getInt("manual_brightness_level", 3).coerceIn(1, 6)
+                    )
+                }
+                var scrollContinuation by remember {
+                    mutableStateOf(preferences.getBoolean("scroll_continuation", false))
+                }
+
                 var saved by remember { mutableStateOf(false) }
 
                 Scaffold(
@@ -78,124 +94,3 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(innerPadding)
                             .verticalScroll(rememberScrollState())
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
-                    ) {
-                        Text(
-                            text = "GLYPH TEXT",
-                            style = MaterialTheme.typography.headlineMedium
-                        )
-
-                        Text(
-                            text = "Настрой свою Glyph Matrix",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-
-                        HorizontalDivider()
-
-                        Text(
-                            text = "Основная надпись",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        OutlinedTextField(
-                            value = staticText,
-                            onValueChange = {
-                                staticText = it
-                                saved = false
-                            },
-                            label = { Text("Первые 3 символа") },
-                            supportingText = {
-                                Text("На матрице отображаются первые 3 символа")
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Text(
-                            text = "Текст при удержании",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        OutlinedTextField(
-                            value = scrollText,
-                            onValueChange = {
-                                scrollText = it
-                                saved = false
-                            },
-                            label = { Text("Текст для прокрутки") },
-                            supportingText = {
-                                Text("Прокручивается при удержании кнопки Glyph")
-                            },
-                            minLines = 2,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Text(
-                            text = "Шрифт",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        FontOption.entries.forEach { option ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = fontStyle == option.key,
-                                    onClick = {
-                                        fontStyle = option.key
-                                        saved = false
-                                    }
-                                )
-                                Text(
-                                    text = option.label,
-                                    modifier = Modifier.padding(start = 8.dp)
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                preferences.edit()
-                                    .putString("static_text", staticText)
-                                    .putString("scroll_text", scrollText)
-                                    .putString("font_style", fontStyle)
-                                    .apply()
-                                saved = true
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Сохранить настройки")
-                        }
-
-                        if (saved) {
-                            Text(
-                                text = "Настройки сохранены!",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        HorizontalDivider()
-
-                        Text(
-                            text = "Предпросмотр",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        Text(text = "На матрице: ${staticText.uppercase().take(3)}")
-                        Text(text = "При удержании: ${scrollText.uppercase()}")
-                        Text(
-                            text = "Шрифт: ${FontOption.entries.firstOrNull { it.key == fontStyle }?.label ?: "Classic"}"
-                        )
-
-                        Text(
-                            text = "После сохранения переключи Glyph Toy, чтобы обновить надпись.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
