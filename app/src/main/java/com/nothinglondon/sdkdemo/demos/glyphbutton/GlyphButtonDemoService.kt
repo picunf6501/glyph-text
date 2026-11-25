@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
 
@@ -21,6 +22,7 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         private const val FONT_CLASSIC = "CLASSIC"
         private const val FONT_BOLD = "BOLD"
         private const val FONT_MINI = "MINI"
+        private const val FONT_GRAFFITI = "GRAFFITI"
     }
 
     private val scope = CoroutineScope(
@@ -37,6 +39,9 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
     private var staticText = "GLY"
     private var scrollText = "GLYPH TEXT"
     private var fontStyle = FONT_CLASSIC
+
+    // Кэш избавляет анимацию от повторного построения букв на каждом кадре.
+    private val glyphCache = mutableMapOf<Pair<String, Char>, Array<String>>()
 
     private val baseFont = mapOf(
         'A' to arrayOf("01110","10001","10001","11111","10001","10001","10001"),
@@ -170,7 +175,6 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
 
         dimJob?.cancel()
         animationJob?.cancel()
-
         isDimmed = false
 
         animationJob = scope.launch {
@@ -221,60 +225,54 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         val textWidth = getTextWidth(text)
         val startX = (25 - textWidth) / 2
 
-        val brightness = if (isDimmed) {
-            DIM_BRIGHTNESS
-        } else {
-            FULL_BRIGHTNESS
-        }
-
+        val brightness = if (isDimmed) DIM_BRIGHTNESS else FULL_BRIGHTNESS
         drawText(text, startX, brightness)
     }
 
     private fun getTextWidth(text: String): Int {
         if (text.isEmpty()) return 0
 
-        val glyphs = text.map { getRenderedGlyph(it) }
-        val widths = glyphs.sumOf { glyph ->
-            if (glyph.isNotEmpty()) glyph[0].length else 0
-        }
-
-        val spacing = (text.length - 1).coerceAtLeast(0)
-        return widths + spacing
+        val totalWidth = text.sumOf { getRenderedGlyph(it)[0].length }
+        return totalWidth + (text.length - 1) * getLetterSpacing()
     }
 
-    private fun getRenderedGlyph(char: Char): Array<String> {
-        val base = baseFont[char] ?: baseFont['?']!!
+    private fun getLetterSpacing(): Int = if (fontStyle == FONT_GRAFFITI) 2 else 1
 
-        return when (fontStyle) {
-            FONT_BOLD -> embolden(base)
-            FONT_MINI -> shrinkToMini(base)
-            else -> base
+    private fun getRenderedGlyph(char: Char): Array<String> {
+        val key = fontStyle to char
+
+        return glyphCache.getOrPut(key) {
+            val base = baseFont[char] ?: baseFont['?']!!
+
+            when (fontStyle) {
+                FONT_BOLD -> embolden(base)
+                FONT_MINI -> shrinkToMini(base)
+                FONT_GRAFFITI -> makeGraffiti(char, base)
+                else -> base
+            }
         }
     }
 
     private fun embolden(rows: Array<String>): Array<String> {
         val height = rows.size
         val width = rows[0].length
-        val out = Array(height) { CharArray(width + 1) { '0' } }
+        val result = Array(height) { CharArray(width + 1) { '0' } }
 
         for (y in 0 until height) {
             for (x in 0 until width) {
                 if (rows[y][x] == '1') {
-                    out[y][x] = '1'
-                    if (x + 1 < width + 1) {
-                        out[y][x + 1] = '1'
-                    }
+                    result[y][x] = '1'
+                    result[y][x + 1] = '1'
                 }
             }
         }
 
-        return Array(height) { String(out[it]) }
+        return Array(height) { String(result[it]) }
     }
 
     private fun shrinkToMini(rows: Array<String>): Array<String> {
         val sourceHeight = rows.size
         val sourceWidth = rows[0].length
-
         val targetWidth = 4
         val targetHeight = 5
 
@@ -288,20 +286,77 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
 
                     var total = 0
                     var on = 0
-
                     for (sy in startY until endY) {
                         for (sx in startX until endX) {
                             total++
-                            if (rows[sy][sx] == '1') {
-                                on++
-                            }
+                            if (rows[sy][sx] == '1') on++
                         }
                     }
-
                     append(if (on * 2 >= total && total > 0) '1' else '0')
                 }
             }
         }
+    }
+
+    // Graffiti: 7x11, фиксированные неровные края и небольшие сколы.
+    // Никакого случайного мерцания: один и тот же символ всегда выглядит одинаково.
+    private fun makeGraffiti(char: Char, rows: Array<String>): Array<String> {
+        val width = 7
+        val height = 11
+        val sourceWidth = rows[0].length
+        val sourceHeight = rows.size
+
+        val original = Array(height) { y ->
+            CharArray(width) { x ->
+                rows[y * sourceHeight / height][x * sourceWidth / width]
+            }
+        }
+
+        val result = Array(height) { y -> original[y].copyOf() }
+
+        // Символы пунктуации сохраняем без прорезей для читаемости.
+        val isHeavyGlyph = char in 'A'..'Z' || char in '0'..'9'
+        if (isHeavyGlyph) {
+            val chips = mutableListOf<Triple<Int, Int, Int>>()
+            val extraPixels = mutableListOf<Triple<Int, Int, Int>>()
+
+            for (y in 1 until height - 1) {
+                for (x in 0 until width) {
+                    val left = if (x > 0 && original[y][x - 1] == '1') 1 else 0
+                    val right = if (x < width - 1 && original[y][x + 1] == '1') 1 else 0
+                    val up = if (original[y - 1][x] == '1') 1 else 0
+                    val down = if (original[y + 1][x] == '1') 1 else 0
+                    val neighbors = left + right + up + down
+
+                    val score = (
+                        char.code * 31 + x * 47 + y * 71 +
+                        (x + 3) * (y + 5) * 11
+                    ) % 97
+
+                    if (original[y][x] == '1' && neighbors in 2..3) {
+                        chips.add(Triple(score, x, y))
+                    } else if (original[y][x] == '0' && neighbors >= 2) {
+                        extraPixels.add(Triple(score, x, y))
+                    }
+                }
+            }
+
+            val chosen = mutableListOf<Pair<Int, Int>>()
+            for ((_, x, y) in chips.sortedBy { it.first }) {
+                if (chosen.all { (cx, cy) -> abs(cx - x) + abs(cy - y) > 3 }) {
+                    result[y][x] = '0'
+                    chosen.add(x to y)
+                }
+                if (chosen.size == 3) break
+            }
+
+            val extra = extraPixels.minByOrNull { it.first }
+            if (extra != null) {
+                result[extra.third][extra.second] = '1'
+            }
+        }
+
+        return Array(height) { String(result[it]) }
     }
 
     private fun drawText(
@@ -314,14 +369,14 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
         val glyphs = text.map { getRenderedGlyph(it) }
         val fontHeight = glyphs.maxOfOrNull { it.size } ?: 0
         val startY = ((25 - fontHeight) / 2).coerceAtLeast(0)
+        val spacing = getLetterSpacing()
 
         val frame = IntArray(25 * 25)
-
         var cursorX = startX
 
-        glyphs.forEach { glyph ->
+        for (glyph in glyphs) {
             val glyphHeight = glyph.size
-            val glyphWidth = if (glyph.isNotEmpty()) glyph[0].length else 0
+            val glyphWidth = glyph[0].length
 
             for (y in 0 until glyphHeight) {
                 for (x in 0 until glyphWidth) {
@@ -338,7 +393,7 @@ class GlyphButtonDemoService : GlyphMatrixService("GlyphText") {
                 }
             }
 
-            cursorX += glyphWidth + 1
+            cursorX += glyphWidth + spacing
         }
 
         glyphMatrixManager?.setMatrixFrame(frame)
