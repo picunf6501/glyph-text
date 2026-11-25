@@ -32,7 +32,8 @@ import com.nothinglondon.sdkdemo.ui.theme.NothingAndroidSDKDemoTheme
 enum class FontOption(val key: String, val label: String) {
     CLASSIC("CLASSIC", "Classic"),
     BOLD("BOLD", "Bold"),
-    MINI("MINI", "Mini")
+    MINI("MINI", "Mini"),
+    GRAFFITI("GRAFFITI", "Graffiti")
 }
 
 class MainActivity : ComponentActivity() {
@@ -48,7 +49,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NothingAndroidSDKDemoTheme {
-
                 var staticText by remember {
                     mutableStateOf(
                         preferences.getString("static_text", "GLY") ?: "GLY"
@@ -73,7 +73,6 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -82,7 +81,6 @@ class MainActivity : ComponentActivity() {
                             .padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
-
                         Text(
                             text = "GLYPH TEXT",
                             style = MaterialTheme.typography.headlineMedium
@@ -164,7 +162,6 @@ class MainActivity : ComponentActivity() {
                                     .putString("scroll_text", scrollText)
                                     .putString("font_style", fontStyle)
                                     .apply()
-
                                 saved = true
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -186,18 +183,10 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.titleMedium
                         )
 
+                        Text(text = "На матрице: ${staticText.uppercase().take(3)}")
+                        Text(text = "При удержании: ${scrollText.uppercase()}")
                         Text(
-                            text = "На матрице: ${staticText.uppercase().take(3)}"
-                        )
-
-                        Text(
-                            text = "При удержании: ${scrollText.uppercase()}"
-                        )
-
-                        Text(
-                            text = "Шрифт: ${
-                                FontOption.entries.firstOrNull { it.key == fontStyle }?.label ?: "Classic"
-                            }"
+                            text = "Шрифт: ${FontOption.entries.firstOrNull { it.key == fontStyle }?.label ?: "Classic"}"
                         )
 
                         Text(
