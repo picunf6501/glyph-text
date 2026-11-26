@@ -1,157 +1,259 @@
-
-Загрузка более ранних сообщений…
-делаем
-Погнали, коллега! 🔥 Готовим Glyph Text v1.3.0 — Auto Scroll Apps.
-
-Реализуем следующие функции:
-
-Переключатель автоматической прокрутки.
-
-Список реально установленных приложений с их названиями и иконками.
-
-Выбор максимум пяти приложений.
-
-Бесконечная прокрутка с паузой в одну секунду между повторами.
-
-Возврат к статичной надписи при выходе из выбранного приложения.
-
-Сохранение всех предыдущих настроек.
-
-Какие файлы будем менять
-Файл
-
-Изменения
-
-MainActivity.kt
-
-Выбор приложений и переключатель
-
-GlyphButtonDemoService.kt
-
-Определение активного приложения и автоматическая прокрутка
-
-AndroidManifest.xml
-
-Разрешение на доступ к истории использования
-
-Для начала пришли мне актуальный AndroidManifest.xml из нашего репозитория.
-
-Открыть AndroidManifest.xml на GitHub
-
-Остальные два файла у нас есть в переписке. Подготовлю полные коды прямо текстом, как в прошлый раз.
-
-Единственное ограничение: пока не проверим на телефоне, неизвестно, позволит ли Nothing OS автоматически выводить анимацию без нажатия Glyph Button при открытом приложении. Начнём с тестовой сборки, а потом уже релиз.
-
-лучше все скинь
-Давай, коллега! Сделаем сразу все три файла для Glyph Text v1.3.0.
-
-Сохраняем все функции предыдущей версии и добавляем выбор до пяти приложений, в которых надпись будет автоматически прокручиваться с паузой в одну секунду.
-
-Для определения открытого приложения используем Android UsageStatsManager — без root и без необходимости включать специальные возможности.
-
-Но есть один момент: GitHub не отдал актуальный манифест. Возьмём за основу нашу предыдущую рабочую версию.
-
-Чтобы не переписывать заново несколько сотен строк и случайно не испортить Graffiti или адаптивную яркость, пришли сюда ZIP актуального репозитория.
-
-Скачать исходники Glyph Text с GitHub
-
-Просто закинь архив сюда, распаковывать не нужно.
-
-Я подготовлю три полных кода прямо текстом:
-
-MainActivity.kt
-
-GlyphButtonDemoService.kt
-
-AndroidManifest.xml
-
-С прямыми ссылками на редакторы GitHub, как раньше.
-
-Так мы сохраним все рабочие функции v1.2.0 и добавим Auto Scroll Apps поверх них. Автоматическую прокрутку при включённом экране пока считаем экспериментальной функцией — её поддержку со стороны Nothing OS проверим на твоём телефоне.
-
-
-glyph-text-main.zip
-Файл
-
-Обработка заняла 38s
-Архив получил, коллега! 🔥 Внутри есть все актуальные исходники Glyph Text.
-
-Будем добавлять Auto Scroll Apps поверх рабочей v1.2.0, сохраняя четыре шрифта, автояркость, шесть ручных уровней яркости и бесшовную прокрутку. Иконку не трогаем.
-
-1. Готовые коды
-Скачать все три обновлённых файла ZIP
-
-Готовый код
-
-Куда вставлять
-
-MainActivity.kt
-
-Редактор GitHub
-
-GlyphButtonDemoService.kt
-
-Редактор GitHub
-
-AndroidManifest.xml
-
-Редактор GitHub
-
-Кода получилось много — 1348 строк суммарно. Поэтому пока приложила полные файлы.
-
-2. Что реализовано
-Включение и выключение Auto Scroll Apps.
-
-Выбор до пяти установленных приложений.
-
-Проверка активного приложения каждые 500 мс.
-
-Бесконечная прокрутка с паузой в одну секунду.
-
-Остановка автоматической прокрутки при блокировке телефона.
-
-Возврат статичной надписи при выходе из приложения.
-
-Сохранение выбранных приложений.
-
-3. Как тестируем
-После замены трёх файлов и успешной сборки:
-
-Устанавливаем APK.
-
-Открываем Glyph Text.
-
-Включаем Auto Scroll Apps.
-
-Разрешаем доступ к истории использования.
-
-Выбираем, например, Spotify.
-
-Сохраняем настройки и переключаем Glyph Toy.
-
-Открываем Spotify.
-
-Надпись должна начать прокручиваться без нажатия кнопки.
-
-Пока это экспериментальная сборка. Полную компиляцию Android я не запускала. Также Nothing OS может отключать наш Glyph Toy при включённом экране — это главный момент, который предстоит проверить. Список приложений пока текстовый, без иконок.
-
-Переходим в GitHub Actions.
-
-Погнали тестировать! 🔥
-
-
-MainActivity.kt
-Код
-
-GlyphButtonDemoService.kt
-Код
-
-AndroidManifest.xml
-Код
-
-
-
-
+package com.nothinglondon.sdkdemo
+
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import com.nothinglondon.sdkdemo.ui.theme.NothingAndroidSDKDemoTheme
+
+enum class FontOption(val key: String, val label: String) {
+    CLASSIC("CLASSIC", "Classic"),
+    BOLD("BOLD", "Bold"),
+    MINI("MINI", "Mini"),
+    GRAFFITI("GRAFFITI", "Graffiti")
+}
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        val preferences = getSharedPreferences(
+            "glyph_settings",
+            Context.MODE_PRIVATE
+        )
+
+        setContent {
+            NothingAndroidSDKDemoTheme {
+
+                var staticText by remember {
+                    mutableStateOf(
+                        preferences.getString("static_text", "GLY") ?: "GLY"
+                    )
+                }
+
+                var scrollText by remember {
+                    mutableStateOf(
+                        preferences.getString("scroll_text", "GLYPH TEXT") ?: "GLYPH TEXT"
+                    )
+                }
+
+                var fontStyle by remember {
+                    mutableStateOf(
+                        preferences.getString("font_style", "CLASSIC") ?: "CLASSIC"
+                    )
+                }
+
+                var autoBrightness by remember {
+                    mutableStateOf(
+                        preferences.getBoolean("auto_brightness", true)
+                    )
+                }
+
+                var manualBrightnessLevel by remember {
+                    mutableStateOf(
+                        preferences.getInt("manual_brightness_level", 3)
+                            .coerceIn(1, 6)
+                    )
+                }
+
+                var scrollContinuation by remember {
+                    mutableStateOf(
+                        preferences.getBoolean("scroll_continuation", false)
+                    )
+                }
+
+                var autoScroll by remember { mutableStateOf(preferences.getBoolean("auto_scroll", false)) }
+                var selectedApps by remember { mutableStateOf(preferences.getStringSet("auto_scroll_apps", emptySet())!!.toSet()) }
+                var showApps by remember { mutableStateOf(false) }
+                val installedApps = remember {
+                    packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                        .filter { it.activityInfo.packageName != packageName }
+                        .distinctBy { it.activityInfo.packageName }
+                        .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
+                        .sortedBy { it.second.lowercase() }
+                }
+                var saved by remember {
+                    mutableStateOf(false)
+                }
+
+                Scaffold(
+                    modifier = Modifier.fillMaxSize()
+                ) { innerPadding ->
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .verticalScroll(rememberScrollState())
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+
+                        Text(
+                            text = "GLYPH TEXT",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+
+                        Text(
+                            text = "Настрой свою Glyph Matrix",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+
+                        HorizontalDivider()
+
+                        Text(
+                            text = "Основная надпись",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        OutlinedTextField(
+                            value = staticText,
+                            onValueChange = {
+                                staticText = it
+                                saved = false
+                            },
+                            label = {
+                                Text("Первые 3 символа")
+                            },
+                            supportingText = {
+                                Text("На матрице отображаются первые 3 символа")
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text(
+                            text = "Текст при удержании",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        OutlinedTextField(
+                            value = scrollText,
+                            onValueChange = {
+                                scrollText = it
+                                saved = false
+                            },
+                            label = {
+                                Text("Текст для прокрутки")
+                            },
+                            supportingText = {
+                                Text("Прокручивается при удержании кнопки Glyph")
+                            },
+                            minLines = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text(
+                            text = "Шрифт",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        FontOption.entries.forEach { option ->
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+
+                                RadioButton(
+                                    selected = fontStyle == option.key,
+                                    onClick = {
+                                        fontStyle = option.key
+                                        saved = false
+                                    }
+                                )
+
+                                Text(
+                                    text = option.label,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        Text(
+                            text = "Яркость в режиме ожидания",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        Text(
+                            text = "Через 10 секунд применяется выбранная яркость.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+
+                            Text(
+                                text = "Автояркость",
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Switch(
+                                checked = autoBrightness,
+                                onCheckedChange = {
+                                    autoBrightness = it
+                                    saved = false
+                                }
+                            )
+                        }
+
+                        if (!autoBrightness) {
+
+                            Text(
+                                text = "Ручная яркость: $manualBrightnessLevel / 6"
+                            )
+
+                            Slider(
+                                value = manualBrightnessLevel.toFloat(),
+                                onValueChange = {
+                                    manualBrightnessLevel = it.roundToInt()
+                                        .coerceIn(1, 6)
+                                    saved = false
+                                },
+                                valueRange = 1f..6f,
+                                steps = 4,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        HorizontalDivider()
+
+                        Text(
+                            text = "Прокрутка при удержании",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+
+                            Text(
+                                text = "Продолжать основную надпись",
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Switch(
                                 checked = scrollContinuation,
                                 onCheckedChange = {
                                     scrollContinuation = it
@@ -279,4 +381,3 @@ AndroidManifest.xml
         }
     }
 }
-
