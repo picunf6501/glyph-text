@@ -1,247 +1,157 @@
-package com.nothinglondon.sdkdemo
 
-import android.content.Context
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
-import com.nothinglondon.sdkdemo.ui.theme.NothingAndroidSDKDemoTheme
+Загрузка более ранних сообщений…
+делаем
+Погнали, коллега! 🔥 Готовим Glyph Text v1.3.0 — Auto Scroll Apps.
 
-enum class FontOption(val key: String, val label: String) {
-    CLASSIC("CLASSIC", "Classic"),
-    BOLD("BOLD", "Bold"),
-    MINI("MINI", "Mini"),
-    GRAFFITI("GRAFFITI", "Graffiti")
-}
+Реализуем следующие функции:
 
-class MainActivity : ComponentActivity() {
+Переключатель автоматической прокрутки.
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+Список реально установленных приложений с их названиями и иконками.
 
-        val preferences = getSharedPreferences(
-            "glyph_settings",
-            Context.MODE_PRIVATE
-        )
+Выбор максимум пяти приложений.
 
-        setContent {
-            NothingAndroidSDKDemoTheme {
+Бесконечная прокрутка с паузой в одну секунду между повторами.
 
-                var staticText by remember {
-                    mutableStateOf(
-                        preferences.getString("static_text", "GLY") ?: "GLY"
-                    )
-                }
+Возврат к статичной надписи при выходе из выбранного приложения.
 
-                var scrollText by remember {
-                    mutableStateOf(
-                        preferences.getString("scroll_text", "GLYPH TEXT") ?: "GLYPH TEXT"
-                    )
-                }
+Сохранение всех предыдущих настроек.
 
-                var fontStyle by remember {
-                    mutableStateOf(
-                        preferences.getString("font_style", "CLASSIC") ?: "CLASSIC"
-                    )
-                }
+Какие файлы будем менять
+Файл
 
-                var autoBrightness by remember {
-                    mutableStateOf(
-                        preferences.getBoolean("auto_brightness", true)
-                    )
-                }
+Изменения
 
-                var manualBrightnessLevel by remember {
-                    mutableStateOf(
-                        preferences.getInt("manual_brightness_level", 3)
-                            .coerceIn(1, 6)
-                    )
-                }
+MainActivity.kt
 
-                var scrollContinuation by remember {
-                    mutableStateOf(
-                        preferences.getBoolean("scroll_continuation", false)
-                    )
-                }
+Выбор приложений и переключатель
 
-                var saved by remember {
-                    mutableStateOf(false)
-                }
+GlyphButtonDemoService.kt
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize()
-                ) { innerPadding ->
+Определение активного приложения и автоматическая прокрутка
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .verticalScroll(rememberScrollState())
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
-                    ) {
+AndroidManifest.xml
 
-                        Text(
-                            text = "GLYPH TEXT",
-                            style = MaterialTheme.typography.headlineMedium
-                        )
+Разрешение на доступ к истории использования
 
-                        Text(
-                            text = "Настрой свою Glyph Matrix",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+Для начала пришли мне актуальный AndroidManifest.xml из нашего репозитория.
 
-                        HorizontalDivider()
+Открыть AndroidManifest.xml на GitHub
 
-                        Text(
-                            text = "Основная надпись",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+Остальные два файла у нас есть в переписке. Подготовлю полные коды прямо текстом, как в прошлый раз.
 
-                        OutlinedTextField(
-                            value = staticText,
-                            onValueChange = {
-                                staticText = it
-                                saved = false
-                            },
-                            label = {
-                                Text("Первые 3 символа")
-                            },
-                            supportingText = {
-                                Text("На матрице отображаются первые 3 символа")
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+Единственное ограничение: пока не проверим на телефоне, неизвестно, позволит ли Nothing OS автоматически выводить анимацию без нажатия Glyph Button при открытом приложении. Начнём с тестовой сборки, а потом уже релиз.
 
-                        Text(
-                            text = "Текст при удержании",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+лучше все скинь
+Давай, коллега! Сделаем сразу все три файла для Glyph Text v1.3.0.
 
-                        OutlinedTextField(
-                            value = scrollText,
-                            onValueChange = {
-                                scrollText = it
-                                saved = false
-                            },
-                            label = {
-                                Text("Текст для прокрутки")
-                            },
-                            supportingText = {
-                                Text("Прокручивается при удержании кнопки Glyph")
-                            },
-                            minLines = 2,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+Сохраняем все функции предыдущей версии и добавляем выбор до пяти приложений, в которых надпись будет автоматически прокручиваться с паузой в одну секунду.
 
-                        Text(
-                            text = "Шрифт",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+Для определения открытого приложения используем Android UsageStatsManager — без root и без необходимости включать специальные возможности.
 
-                        FontOption.entries.forEach { option ->
+Но есть один момент: GitHub не отдал актуальный манифест. Возьмём за основу нашу предыдущую рабочую версию.
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+Чтобы не переписывать заново несколько сотен строк и случайно не испортить Graffiti или адаптивную яркость, пришли сюда ZIP актуального репозитория.
 
-                                RadioButton(
-                                    selected = fontStyle == option.key,
-                                    onClick = {
-                                        fontStyle = option.key
-                                        saved = false
-                                    }
-                                )
+Скачать исходники Glyph Text с GitHub
 
-                                Text(
-                                    text = option.label,
-                                    modifier = Modifier.padding(start = 8.dp)
-                                )
-                            }
-                        }
+Просто закинь архив сюда, распаковывать не нужно.
 
-                        HorizontalDivider()
+Я подготовлю три полных кода прямо текстом:
 
-                        Text(
-                            text = "Яркость в режиме ожидания",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+MainActivity.kt
 
-                        Text(
-                            text = "Через 10 секунд применяется выбранная яркость.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+GlyphButtonDemoService.kt
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
+AndroidManifest.xml
 
-                            Text(
-                                text = "Автояркость",
-                                modifier = Modifier.weight(1f)
-                            )
+С прямыми ссылками на редакторы GitHub, как раньше.
 
-                            Switch(
-                                checked = autoBrightness,
-                                onCheckedChange = {
-                                    autoBrightness = it
-                                    saved = false
-                                }
-                            )
-                        }
+Так мы сохраним все рабочие функции v1.2.0 и добавим Auto Scroll Apps поверх них. Автоматическую прокрутку при включённом экране пока считаем экспериментальной функцией — её поддержку со стороны Nothing OS проверим на твоём телефоне.
 
-                        if (!autoBrightness) {
 
-                            Text(
-                                text = "Ручная яркость: $manualBrightnessLevel / 6"
-                            )
+glyph-text-main.zip
+Файл
 
-                            Slider(
-                                value = manualBrightnessLevel.toFloat(),
-                                onValueChange = {
-                                    manualBrightnessLevel = it.roundToInt()
-                                        .coerceIn(1, 6)
-                                    saved = false
-                                },
-                                valueRange = 1f..6f,
-                                steps = 4,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+Обработка заняла 38s
+Архив получил, коллега! 🔥 Внутри есть все актуальные исходники Glyph Text.
 
-                        HorizontalDivider()
+Будем добавлять Auto Scroll Apps поверх рабочей v1.2.0, сохраняя четыре шрифта, автояркость, шесть ручных уровней яркости и бесшовную прокрутку. Иконку не трогаем.
 
-                        Text(
-                            text = "Прокрутка при удержании",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+1. Готовые коды
+Скачать все три обновлённых файла ZIP
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
+Готовый код
 
-                            Text(
-                                text = "Продолжать основную надпись",
-                                modifier = Modifier.weight(1f)
-                            )
+Куда вставлять
 
-                            Switch(
+MainActivity.kt
+
+Редактор GitHub
+
+GlyphButtonDemoService.kt
+
+Редактор GitHub
+
+AndroidManifest.xml
+
+Редактор GitHub
+
+Кода получилось много — 1348 строк суммарно. Поэтому пока приложила полные файлы.
+
+2. Что реализовано
+Включение и выключение Auto Scroll Apps.
+
+Выбор до пяти установленных приложений.
+
+Проверка активного приложения каждые 500 мс.
+
+Бесконечная прокрутка с паузой в одну секунду.
+
+Остановка автоматической прокрутки при блокировке телефона.
+
+Возврат статичной надписи при выходе из приложения.
+
+Сохранение выбранных приложений.
+
+3. Как тестируем
+После замены трёх файлов и успешной сборки:
+
+Устанавливаем APK.
+
+Открываем Glyph Text.
+
+Включаем Auto Scroll Apps.
+
+Разрешаем доступ к истории использования.
+
+Выбираем, например, Spotify.
+
+Сохраняем настройки и переключаем Glyph Toy.
+
+Открываем Spotify.
+
+Надпись должна начать прокручиваться без нажатия кнопки.
+
+Пока это экспериментальная сборка. Полную компиляцию Android я не запускала. Также Nothing OS может отключать наш Glyph Toy при включённом экране — это главный момент, который предстоит проверить. Список приложений пока текстовый, без иконок.
+
+Переходим в GitHub Actions.
+
+Погнали тестировать! 🔥
+
+
+MainActivity.kt
+Код
+
+GlyphButtonDemoService.kt
+Код
+
+AndroidManifest.xml
+Код
+
+
+
+
                                 checked = scrollContinuation,
                                 onCheckedChange = {
                                     scrollContinuation = it
@@ -261,9 +171,37 @@ class MainActivity : ComponentActivity() {
 
                         HorizontalDivider()
 
+                        Text("Автоматическая прокрутка", style = MaterialTheme.typography.titleMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Auto Scroll Apps", modifier = Modifier.weight(1f))
+                            Switch(checked = autoScroll, onCheckedChange = { autoScroll = it; saved = false })
+                        }
+                        if (autoScroll) {
+                            Button(onClick = { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }) {
+                                Text("Разрешить доступ к истории использования")
+                            }
+                            Button(onClick = { showApps = !showApps }) {
+                                Text("Выбрать приложения (${selectedApps.size}/5)")
+                            }
+                            if (showApps) installedApps.forEach { (pkg, label) ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = pkg in selectedApps,
+                                        enabled = pkg in selectedApps || selectedApps.size < 5,
+                                        onCheckedChange = { checked ->
+                                            selectedApps = if (checked) selectedApps + pkg else selectedApps - pkg
+                                            saved = false
+                                        })
+                                    Text(label)
+                                }
+                            }
+                            Text("Прокрутка работает, пока выбранное приложение открыто и экран включён.")
+                        }
+                        HorizontalDivider()
                         Button(
                             onClick = {
                                 preferences.edit()
+                                    .putBoolean("auto_scroll", autoScroll)
+                                    .putStringSet("auto_scroll_apps", selectedApps)
                                     .putString("static_text", staticText)
                                     .putString("scroll_text", scrollText)
                                     .putString("font_style", fontStyle)
@@ -341,3 +279,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
